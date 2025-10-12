@@ -1,0 +1,403 @@
+!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LocalVoice - Geo-Petitions</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .modal-backdrop {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-width: 90%;
+            width: 500px;
+        }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #09f;
+            animation: spin 1s ease infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <div id="app" class="container mx-auto p-4 md:p-8 max-w-7xl">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-900">LocalVoice</h1>
+            <p class="text-gray-600 mt-2">Create and discover petitions in your area.</p>
+        </header>
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="flex flex-col items-center justify-center h-64">
+            <div class="spinner"></div>
+            <p class="mt-4 text-gray-600">Initializing...</p>
+        </div>
+        
+        <main id="main-content" class="hidden grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Left Column: Create Petition & User Info -->
+            <div class="lg:col-span-1 bg-white p-6 rounded-lg shadow-md h-fit">
+                <h2 class="text-2xl font-bold mb-4">Your Voice</h2>
+                <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p class="text-sm"><strong>Your User ID:</strong> <code id="userId" class="break-all">...</code></p>
+                    <div class="mt-4">
+                        <label for="latitude-input" class="block text-sm font-medium text-gray-700 mb-2">Set Your Location by Coordinates</label>
+                        <div class="flex gap-2 mb-2">
+                            <input type="number" id="latitude-input" placeholder="Latitude" step="any" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <input type="number" id="longitude-input" placeholder="Longitude" step="any" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <button id="set-location-btn" class="w-full bg-indigo-500 text-white font-semibold text-sm py-2 px-4 rounded-md hover:bg-indigo-600 transition duration-300">Find Petitions</button>
+                    </div>
+                    <p class="mt-2 text-sm"><strong>Searching Near:</strong> <span id="userLocation">Not set</span></p>
+                </div>
+
+                <h3 class="text-xl font-semibold mb-3">Create a New Petition</h3>
+                <form id="create-petition-form">
+                    <div class="mb-4">
+                        <label for="title" class="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                        <input type="text" id="title" name="title" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., Add a new crosswalk">
+                    </div>
+                    <div class="mb-4">
+                        <label for="description" class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                        <textarea id="description" name="description" rows="4" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Explain why this is important for the community."></textarea>
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-md hover:bg-blue-700 transition duration-300">Create Petition</button>
+                </form>
+            </div>
+
+            <!-- Right Column: Petitions List -->
+            <div class="lg:col-span-2 bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-2xl font-bold mb-4">Nearby Petitions</h2>
+                <div id="petitions-list" class="space-y-4">
+                    <!-- Petitions will be dynamically inserted here -->
+                     <p id="no-petitions" class="text-gray-500">Enter your coordinates to find petitions.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal for notifications and viewing signatures -->
+    <div id="modal" class="modal-backdrop">
+        <div class="modal-content">
+            <h3 id="modal-title" class="text-xl font-bold mb-4">Notification</h3>
+            <p id="modal-body" class="mb-6"></p>
+            <div id="modal-list" class="max-h-60 overflow-y-auto mb-4"></div>
+            <button id="modal-close" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-md hover:bg-gray-400 transition duration-300">Close</button>
+        </div>
+    </div>
+
+    <script type="module">
+        // IMPORTANT: Replace this with your actual Firebase config object from Step 3
+        const firebaseConfig = {
+            apiKey: "*****",
+            authDomain: "*****",
+            projectId: "***",
+            storageBucket: "****",
+            messagingSenderId: "*****",
+            appId: "*****"
+        };
+
+        // These are special variables provided by the environment.
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Import Firebase modules
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, setDoc, doc, collection, onSnapshot, updateDoc, arrayUnion, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // State variables
+        let currentUser = null;
+        let userLocation = null;
+        let allPetitions = [];
+
+        // DOM Elements
+        const loadingEl = document.getElementById('loading');
+        const mainContentEl = document.getElementById('main-content');
+        const userIdEl = document.getElementById('userId');
+        const userLocationEl = document.getElementById('userLocation');
+        const latitudeInput = document.getElementById('latitude-input');
+        const longitudeInput = document.getElementById('longitude-input');
+        const setLocationBtn = document.getElementById('set-location-btn');
+        const petitionsListEl = document.getElementById('petitions-list');
+        const noPetitionsEl = document.getElementById('no-petitions');
+        const createPetitionForm = document.getElementById('create-petition-form');
+        const modal = document.getElementById('modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalBody = document.getElementById('modal-body');
+        const modalList = document.getElementById('modal-list');
+        const modalClose = document.getElementById('modal-close');
+        
+        // --- MODAL & UTILITY FUNCTIONS ---
+        
+        function showModal(title, body, listItems = []) {
+            modalTitle.textContent = title;
+            modalBody.textContent = body;
+            modalList.innerHTML = '';
+            if (listItems.length > 0) {
+                 modalBody.style.display = 'none';
+                 const listHTML = listItems.map(item => `<div class="p-2 border-b break-all">${item}</div>`).join('');
+                 modalList.innerHTML = `<div class="border rounded">${listHTML}</div>`;
+            } else {
+                 modalBody.style.display = 'block';
+            }
+            modal.style.display = 'flex';
+        }
+
+        modalClose.addEventListener('click', () => {
+            modal.style.display = 'none';
+        });
+
+        // Haversine formula to calculate distance between two lat/lon points
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Radius of the Earth in km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c; // Distance in km
+        }
+        
+        // --- FIREBASE LOGIC ---
+
+        // Handle petition creation
+        createPetitionForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!currentUser) {
+                showModal("Authentication Error", "You must be authenticated to create a petition.");
+                return;
+            }
+             if (!userLocation) {
+                showModal("Location Error", "You must set your location before creating a petition.");
+                return;
+            }
+            const title = createPetitionForm.title.value;
+            const description = createPetitionForm.description.value;
+            
+            const newPetitionRef = doc(collection(db, `/artifacts/${appId}/public/data/petitions`));
+
+            try {
+                await setDoc(newPetitionRef, {
+                    id: newPetitionRef.id,
+                    title,
+                    description,
+                    location: userLocation,
+                    createdBy: currentUser.uid,
+                    signatures: [currentUser.uid], // Creator automatically signs
+                    createdAt: serverTimestamp(),
+                });
+                createPetitionForm.reset();
+                showModal("Success!", "Your petition has been created.");
+            } catch (error) {
+                console.error("Error creating petition:", error);
+                showModal("Error", "There was a problem creating your petition. Please try again.");
+            }
+        });
+
+        // Handle signing a petition
+        async function signPetition(petitionId) {
+            if (!currentUser) {
+                showModal("Error", "You must be signed in to sign a petition.");
+                return;
+            }
+            const petitionRef = doc(db, `/artifacts/${appId}/public/data/petitions`, petitionId);
+            try {
+                await updateDoc(petitionRef, {
+                    signatures: arrayUnion(currentUser.uid)
+                });
+                showModal("Thank You!", "You have successfully signed the petition.");
+            } catch (error) {
+                console.error("Error signing petition:", error);
+                showModal("Error", "There was an error signing the petition.");
+            }
+        }
+        
+        // Listen for real-time updates to petitions
+        function listenForPetitions() {
+            const petitionsCol = collection(db, `/artifacts/${appId}/public/data/petitions`);
+            onSnapshot(petitionsCol, (snapshot) => {
+                allPetitions = []; // Reset the global list
+                snapshot.forEach(doc => {
+                    allPetitions.push(doc.data());
+                });
+                // Render with the current user location (or lack thereof)
+                updateAndRenderPetitions();
+            });
+        }
+
+        function updateAndRenderPetitions() {
+            // Create a temporary copy to sort and render
+            let petitionsToRender = [...allPetitions];
+            
+            // Calculate distances if location is set
+            if (userLocation) {
+                petitionsToRender.forEach(p => {
+                    if (p.location) {
+                        p.distance = calculateDistance(userLocation.latitude, userLocation.longitude, p.location.latitude, p.location.longitude);
+                    } else {
+                        p.distance = Infinity;
+                    }
+                });
+                 // Sort by distance (closest first)
+                petitionsToRender.sort((a, b) => a.distance - b.distance);
+            }
+            renderPetitions(petitionsToRender);
+        }
+
+        // Render the list of petitions to the DOM
+        function renderPetitions(petitions) {
+            petitionsListEl.innerHTML = ''; // Clear existing list
+            
+            if (!userLocation) {
+                noPetitionsEl.textContent = 'Enter coordinates to find nearby petitions.';
+                noPetitionsEl.style.display = 'block';
+                return;
+            }
+
+            if (petitions.length === 0) {
+                noPetitionsEl.textContent = 'No petitions found yet. Be the first to create one!';
+                noPetitionsEl.style.display = 'block';
+                return;
+            }
+            
+            noPetitionsEl.style.display = 'none';
+            
+            petitions.forEach(p => {
+                const alreadySigned = currentUser && p.signatures.includes(currentUser.uid);
+                const distanceText = (p.distance !== undefined && p.distance !== Infinity) ? `${p.distance.toFixed(2)} km away` : 'Distance unknown';
+
+                const card = document.createElement('div');
+                card.className = 'border rounded-lg p-4 flex flex-col justify-between';
+                card.innerHTML = `
+                    <div>
+                        <div class="flex justify-between items-start mb-2">
+                            <h3 class="text-lg font-bold">${p.title}</h3>
+                            <span class="text-sm font-medium text-gray-500">${distanceText}</span>
+                        </div>
+                        <p class="text-gray-600 mb-4">${p.description}</p>
+                    </div>
+                    <div class="flex items-center justify-between text-sm">
+                        <span class="font-semibold">${p.signatures.length} Signature(s)</span>
+                        <div class="flex gap-2">
+                             <button class="view-signatures-btn text-blue-600 hover:underline" data-signatures='${JSON.stringify(p.signatures)}'>View Signers</button>
+                             <button class="sign-btn ${alreadySigned ? 'bg-green-500 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'} text-white font-bold py-1 px-3 rounded-md transition duration-300" data-id="${p.id}" ${alreadySigned ? 'disabled' : ''}>
+                                ${alreadySigned ? 'Signed' : 'Sign'}
+                            </button>
+                        </div>
+                    </div>
+                `;
+                petitionsListEl.appendChild(card);
+            });
+
+            // Add event listeners to the new buttons
+            document.querySelectorAll('.sign-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    if(!e.target.disabled) {
+                       signPetition(e.target.dataset.id);
+                    }
+                });
+            });
+
+             document.querySelectorAll('.view-signatures-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const signatures = JSON.parse(e.target.dataset.signatures);
+                    showModal('Signatories', 'The following users have signed this petition:', signatures);
+                });
+            });
+        }
+
+        // --- INITIALIZATION ---
+        
+        // Handle location input
+        setLocationBtn.addEventListener('click', () => {
+            const lat = parseFloat(latitudeInput.value);
+            const lon = parseFloat(longitudeInput.value);
+
+            if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+                showModal("Invalid Input", "Please enter valid latitude (-90 to 90) and longitude (-180 to 180) values.");
+                return;
+            }
+
+            userLocation = { latitude: lat, longitude: lon };
+            userLocationEl.textContent = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+            updateAndRenderPetitions();
+        });
+
+        // Firebase Initialization variables
+        let app, auth, db;
+        
+        // Main entry point
+        window.addEventListener('DOMContentLoaded', () => {
+             // Check if the Firebase config is still the placeholder
+            if (firebaseConfig.apiKey === "AIzaSyYOUR_API_KEY") {
+                loadingEl.style.display = 'none'; // Hide the spinner
+                showModal(
+                    "Configuration Needed", 
+                    "It looks like you haven't set up your Firebase configuration yet. Please follow Step 3 from the instructions to create a Firebase project, get your 'firebaseConfig' object, and paste it into the index.html file to replace the placeholder values."
+                );
+                return; 
+            }
+            
+            // Initialize Firebase
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+
+            // If config is present, proceed with authentication
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    currentUser = user;
+                    userIdEl.textContent = user.uid;
+                    
+                    // App is ready, hide loading and show content
+                    loadingEl.style.display = 'none';
+                    mainContentEl.classList.remove('hidden');
+
+                    // Start listening for petitions from the database
+                    listenForPetitions();
+
+                } else {
+                    try {
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (error) {
+                        console.error("Anonymous sign-in failed:", error);
+                        showModal("Authentication Error", "Could not connect to the service. Please check your Firebase configuration and security rules.");
+                    }
+                }
+            });
+        });
+
+    </script>
+</body>
+</html>
+
